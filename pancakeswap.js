@@ -1,14 +1,18 @@
 const ethers = require('ethers');
+const provider = new ethers.providers.WebSocketProvider('wss://ws-nd-186-441-216.p2pify.com/5ce376816d1963db2884ce68878344fc');
 
 const addresses = {
-  WBNB: '0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd',
-  factory: '0xB7926C0430Afb07AA7DEfDE6DA862aE0Bde767bc',
-  router: '0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3',
+  WBNB:      '0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd',
+  factory:   '0xB7926C0430Afb07AA7DEfDE6DA862aE0Bde767bc',
+  router:    '0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3',
   recipient: '0x518E3a4fe18A6aD1708e6a5efAD533C235FcC783'
 }
 
-const provider = new ethers.providers.WebSocketProvider('wss://ws-nd-186-441-216.p2pify.com/5ce376816d1963db2884ce68878344fc');
-const wallet = new ethers.Wallet('0xb15773022ebe1a1f40db803e6aa9afa4da8a1c76a0a0eb2344b21c2f98269e6f',provider); //signing purpose
+//We buy for 0.1 BNB of the new token
+const ethAmount = '0.0001';
+const amountIn = ethers.utils.parseUnits(ethAmount, 'ether');
+
+const wallet = new ethers.Wallet('your private key',provider); //signing purpose
 
 const account = wallet.connect(provider);
 
@@ -26,24 +30,6 @@ const router = new ethers.Contract(
   ],
   account
 );
-
-// const wbnb = new ethers.Contract(
-//   addresses.WBNB,
-//   [
-//     'function approve(address spender, uint amount) public returns(bool)',
-//   ],
-//   account
-// );
-
-// const init = async () => {
-//   const tx = await wbnb.approve(
-//     router.address, 
-//     'replace by amount covering several trades'
-//   );
-//   const receipt = await tx.wait(); 
-//   console.log('Transaction receipt');
-//   console.log(receipt);
-// }
 
 factory.on('PairCreated', async (token0, token1, pairAddress) => {
   console.log(`
@@ -71,12 +57,25 @@ factory.on('PairCreated', async (token0, token1, pairAddress) => {
     return;
   }
 
-  //We buy for 0.1 BNB of the new token
+  // Ideally you'll probably want to take a closer look at reserves, and price from the pair address
+  const pairContract = new ethers.Contract(
+    pairAddress,
+    ['function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)'],
+    account);
+
+  const reserves = await pairContract.getReserves();
+
+   // if insufficient liquidity move on
+   if (reserves[0] == 0 && reserves[1] == 0) {
+      console.log(`Token has no liquidity...`);
+      return
+    }
+
   //ethers was originally created for Ethereum, both also work for BSC
   //'ether' === 'bnb' on BSC
-  const amountIn = ethers.utils.parseUnits('0.001', 'ether');
   const amounts = await router.getAmountsOut(amountIn, [tokenIn, tokenOut]);
-  //Our execution price will be a bit different, we need some flexbility
+
+  //Our execution price will be a bit different, we need some flexbility 10% slippage
   const amountOutMin = amounts[1].sub(amounts[1].div(10));
 
   console.log(`
@@ -87,7 +86,8 @@ factory.on('PairCreated', async (token0, token1, pairAddress) => {
   `);
 
   if (tokenIn == '0x423De25Ee85b3D882865166016c892A44C838395' || tokenOut =='0x423De25Ee85b3D882865166016c892A44C838395' )
-  {const tx = await router.swapExactTokensForTokens(
+  {
+    const tx = await router.swapExactTokensForTokens(
     amountIn,
     amountOutMin,
     [tokenIn, tokenOut],
@@ -100,5 +100,6 @@ factory.on('PairCreated', async (token0, token1, pairAddress) => {
 
   const receipt = await tx.wait(); 
   console.log('Transaction receipt');
-  console.log(receipt);}
+  console.log(receipt);
+  }
 });
